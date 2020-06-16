@@ -44,7 +44,6 @@ rsa.heatmap_speaker()
 # rsa.heatmap_listener()
 
 # %%
-################## M IMPLICATURES  #############################
 
 
 

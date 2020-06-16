@@ -81,7 +81,7 @@ class RSA:
 		states_with_utterances = np.repeat(self.states[:, np.newaxis, :],       self.n_alts,   axis = 1)
 
 		utility = - (stats.entropy(states_with_utterances, 
-		                         listener_with_states, axis=2) + self.costs[np.newaxis,:])
+		                           listener_with_states, axis = 2) + self.costs[np.newaxis,:])
 
 		# P(u | s)
 		speaker = np.exp(self.rationality * utility)
@@ -109,7 +109,7 @@ class RSA:
 
 		else:
 			list_dist = self.speakers
-			
+
 			lab_lines = self.lab_states
 			lab_cols  = self.lab_alts
 

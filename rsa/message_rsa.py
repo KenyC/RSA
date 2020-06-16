@@ -42,7 +42,19 @@ class MessageRSA:
 		self.costs_tcs          = self.message_tcs_matrix.transpose().dot(self.costs)
 		self.message_tcs_matrix = self.message_tcs_matrix / np.sum(self.message_tcs_matrix, axis = 1) [:, np.newaxis]
 
+		# LEXICA INITIALIZATION
+		self.n_lexica = 1
+		for size in map(len, map(lambda x: x[1], self.messages)):
+		    self.n_lexica *= size
 
+		# %%
+		size_messages = tuple(map(len, map(lambda x: x[1], self.messages)))
+		self.lexicon_matrix = np.zeros((self.n_lexica, self.n_messages, self.n_tcs), dtype = "float")
+
+		for i in range(self.n_lexica):
+		    for j in range(self.n_messages):
+		        indices = np.unravel_index(i, size_messages)
+		        self.lexicon_matrix[i, j, sum(size_messages[:j]) + indices[j]] = 1.
 
 		# world priors
 		# prior = np.ones(universe.worlds.shape[0])
@@ -98,30 +110,35 @@ class MessageRSA:
 
 
 	def compute_literal_speaker(self):
-		# shape : (states, tcs, worlds)
-		listener_with_states   = np.repeat(self.last_listener[np.newaxis, ...], self.n_states, axis = 0)
-		states_with_utterances = np.repeat(self.states[:, np.newaxis, :],       self.n_tcs,   axis = 1)
+		# P(worlds | lexicon, message)
+		listener_given_lexica = self.lexicon_matrix.dot(self.last_listener)
+
+		# \state. P(world | lexicon, message) 
+		listener_given_lexica_states   = np.tile(listener_given_lexica,             
+		                                         (self.n_states, 1, 1, 1))
+		# \lexica \message. P(world | state) 
+		states_with_utterances         = np.tile(self.states[:, np.newaxis, np.newaxis, :], 
+		                                         (1, self.n_lexica, self.n_messages, 1))
 
 		utility = - (stats.entropy(states_with_utterances, 
-		                           listener_with_states, axis=2) + self.costs_tcs)
+		                           listener_given_lexica_states, axis = -1) + self.costs[np.newaxis, np.newaxis, :])
 
-		# P(u | s)
+
+		# P(message | lexicon, state)
 		speaker = np.exp(self.rationality * utility)
-		speaker = speaker / np.sum(speaker, axis = 1)[:, np.newaxis]
+		speaker = speaker / np.sum(speaker, axis = -1)[..., np.newaxis]
 
 		self.speakers.append(speaker)
 
 
 	def compute_first_rational_listener(self):
 		# P(u | v) = P(v | u) * P(u) / Sum P(v | u) P(u)
-		state_given_message_and_lexicon = (self.last_speaker / np.sum(self.last_speaker, axis = 0)).transpose()
+		speaker = rsa.last_speaker
+		speaker_given_state_only =  np.sum(speaker, axis = 1) 
+		# TODO: lexicon prior
+		speaker_given_state_only = speaker_given_state_only / np.sum(speaker_given_state_only, axis = -1)[:, np.newaxis]
 
-
-		# P(message | state) = sum_lexicon P(message, lexicon | state) P(lexicon | state)  
-		# message_tcs_matrix : (messages, tcs)
-		# state_given_message_and_lexicon : (tcs, state)
-		state_given_message = np.sum(self.message_tcs_matrix[..., np.newaxis] *  state_given_message_and_lexicon[np.newaxis, ...], axis = 1)
-		listener = np.sum(self.states[np.newaxis, ...] *  state_given_message[..., np.newaxis], axis = 1)
+		listener = speaker_given_state_only.transpose().dot(rsa.states)
 
 		self.listeners.append(listener)
 
@@ -171,8 +188,18 @@ class MessageRSA:
 			list_dist = self.speakers
 
 			if norm_n == 0:
-				lab_cols = self.lab_tcs
 				lab_lines  = self.lab_states
+				lab_cols = self.lab_messages
+
+				for i in range(self.n_lexica):
+					print("############ Lexicon {} ############".format(i))
+					print("LEXICON")
+					fn(self.lexicon_matrix[i, :, :], self.lab_messages, self.lab_tcs, round_to = round_to)
+					print("SPEAKER")
+					fn(list_dist[n][:, i, :], lab_lines, lab_cols, round_to = round_to)
+
+				return
+
 			else:
 				lab_cols = self.lab_messages
 				lab_lines  = self.lab_states
