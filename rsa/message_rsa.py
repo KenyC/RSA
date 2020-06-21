@@ -7,7 +7,13 @@ from utils import *
 
 class MessageRSA:
 
-	def __init__(self, universe, messages, states = None, world_prior = None, costs = None, rationality = 1.):
+	def __init__(self, universe, 
+	                   messages, 
+	                   states = None, 
+	                   world_prior = None, 
+	                   costs = None, 
+	                   rationality = 1.):
+
 		self.universe = universe
 		self.rationality = rationality
 		self.messages = messages
@@ -60,7 +66,7 @@ class MessageRSA:
 		# prior = np.ones(universe.worlds.shape[0])
 		if world_prior is None:
 			world_prior = np.ones(universe.worlds.shape[0]) + 1
-		self.prior = world_prior / np.sum(world_prior)
+		self.world_prior = world_prior / np.sum(world_prior)
 
 
 		if states is None:
@@ -68,8 +74,11 @@ class MessageRSA:
 		else:
 			self.states = np.stack(self.universe.evaluate(*(map(lambda x: x[1], states)))).transpose()
 
+		self.world_state_prior = (self.states / np.sum(self.states, axis = 0)) * self.world_prior[np.newaxis, :]
 		self.states   = self.states / np.sum(self.states, axis = 1) [:, np.newaxis]
 		self.n_states = len(self.states)
+
+		self.state_prior = np.sum(self.world_state_prior, axis = 1)
 
 		self.compute(n = 0)
 
@@ -103,7 +112,7 @@ class MessageRSA:
 
 
 	def compute_literal_listener(self):
-		listener0 = self.universe.evaluate(*self.truth_conditions()).transpose() * self.prior
+		listener0 = self.universe.evaluate(*self.truth_conditions()).transpose() * self.world_prior
 		listener0 = listener0 / np.sum(listener0, axis = 1)[:, np.newaxis]
 
 		self.listeners.append(listener0)
@@ -132,13 +141,17 @@ class MessageRSA:
 
 
 	def compute_first_rational_listener(self):
-		# P(u | v) = P(v | u) * P(u) / Sum P(v | u) P(u)
-		speaker = rsa.last_speaker
-		speaker_given_state_only =  np.sum(speaker, axis = 1) 
-		# TODO: lexicon prior
-		speaker_given_state_only = speaker_given_state_only / np.sum(speaker_given_state_only, axis = -1)[:, np.newaxis]
+		speaker = self.last_speaker
 
-		listener = speaker_given_state_only.transpose().dot(rsa.states)
+		# P(message | state)
+		# TODO: lexicon prior
+		speaker_given_state_only =  np.sum(speaker, axis = 1)  
+
+		# P(state | message)
+		state_given_message = speaker_given_state_only.transpose() *  self.state_prior[np.newaxis, :]
+		state_given_message = state_given_message / np.sum(state_given_message, axis = -1)[:, np.newaxis]
+
+		listener = state_given_message.dot(self.states)
 
 		self.listeners.append(listener)
 
@@ -163,7 +176,8 @@ class MessageRSA:
 
 
 	def compute_rational_listener(self):
-		state_given_utterance = (self.last_speaker / np.sum(self.last_speaker, axis = 0)).transpose()
+		state_given_utterance = self.last_speaker *  self.state_prior[:, np.newaxis]
+		state_given_utterance = (state_given_utterance / np.sum(state_given_utterance, axis = 0)).transpose()
 
 		# P(w|u) = sum P(w | u, s)P(s | u) = sum P(w|s) * P(s|u)
 		listener = np.sum(self.states[np.newaxis, ...] *  state_given_utterance[..., np.newaxis], axis = 1)
